@@ -73,10 +73,14 @@ class MacroAccessibilityService : AccessibilityService() {
                 StepType.WAIT -> { /* unreachable */ }
             }
 
-            dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) = cont.resume(Unit)
-                override fun onCancelled(gestureDescription: GestureDescription?) = cont.resume(Unit)
-            }, null)
+            dispatchGesture(
+                gestureBuilder.build(),
+                object : AccessibilityService.GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) = cont.resume(Unit)
+                    override fun onCancelled(gestureDescription: GestureDescription?) = cont.resume(Unit)
+                },
+                null
+            )
         }
     }
 }
