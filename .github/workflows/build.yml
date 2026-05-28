@@ -34,18 +34,23 @@ jobs:
             "build-tools;35.0.0" 2>&1 | grep -v '^\\[=' || true
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --stacktrace 2>&1 | tee build-debug.log; exit ${PIPESTATUS[0]}
+        id: build_debug
+        run: |
+          set +e
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build-debug.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "::error::===BUILD FAILED - ERRORS BELOW==="
+            grep -E "^(e: |error:|> Task|FAILED|Exception in thread|Caused by:|Unresolved reference|None of the following)" \
+              build-debug.log | head -40 | \
+            while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          fi
+          exit $EXIT_CODE
 
       - name: Build Release APK (unsigned)
-        run: gradle :app:assembleRelease --stacktrace 2>&1 | tee build-release.log; exit ${PIPESTATUS[0]}
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-${{ github.sha }}
-          path: "*.log"
-          if-no-files-found: warn
+        run: gradle :app:assembleRelease --stacktrace
 
       - name: Upload Debug APK
         if: success()
