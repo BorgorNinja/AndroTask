@@ -1,0 +1,53 @@
+name: Build APK
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK Platform 35
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" 2>&1 | grep -v '^\[=' || true
+
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Build Release APK (unsigned)
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Upload Debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AndroTask-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/
+          if-no-files-found: warn
+
+      - name: Upload Release APK (unsigned)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AndroTask-release-unsigned-${{ github.sha }}
+          path: app/build/outputs/apk/release/
+          if-no-files-found: warn
