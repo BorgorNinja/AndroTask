@@ -2,9 +2,11 @@ package com.borgorninja.androtask.data
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
+@Serializable
 enum class StepType {
     TAP, LONG_PRESS, SWIPE, PINCH, WAIT
 }
@@ -17,7 +19,8 @@ enum class StepType {
         parentColumns = ["id"],
         childColumns = ["macroId"],
         onDelete = ForeignKey.CASCADE
-    )]
+    )],
+    indices = [Index("macroId")]
 )
 data class MacroStep(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
