@@ -31,16 +31,24 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platforms;android-35" \
-            "build-tools;35.0.0" 2>&1 | grep -v '^\[=' || true
+            "build-tools;35.0.0" 2>&1 | grep -v '^\\[=' || true
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --stacktrace 2>&1 | tee build-debug.log; exit ${PIPESTATUS[0]}
 
       - name: Build Release APK (unsigned)
-        run: gradle :app:assembleRelease --stacktrace
+        run: gradle :app:assembleRelease --stacktrace 2>&1 | tee build-release.log; exit ${PIPESTATUS[0]}
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.sha }}
+          path: "*.log"
+          if-no-files-found: warn
 
       - name: Upload Debug APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: AndroTask-debug-${{ github.sha }}
@@ -48,7 +56,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload Release APK (unsigned)
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: AndroTask-release-unsigned-${{ github.sha }}
