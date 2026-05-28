@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AndroTask</string>
+    <string name="accessibility_service_description">Allows AndroTask to record and replay touch gestures on your screen without root access.</string>
+</resources>
