@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -22,6 +25,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Accessibility service for gesture dispatch + recording -->
         <service
             android:name=".MacroAccessibilityService"
             android:exported="true"
@@ -35,10 +39,21 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Floating bubble + touch-recording overlay -->
         <service
             android:name=".FloatingOverlayService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
+
+        <!-- Alarm receiver: handles BOOT_COMPLETED + macro trigger alarms -->
+        <receiver
+            android:name=".MacroAlarmReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="com.borgorninja.androtask.MACRO_TRIGGER" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
