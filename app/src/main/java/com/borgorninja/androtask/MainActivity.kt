@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.borgorninja.androtask.ui.HomeScreen
 import com.borgorninja.androtask.ui.MacroEditorScreen
+import com.borgorninja.androtask.ui.OnboardingScreen
 import com.borgorninja.androtask.ui.SettingsScreen
 import com.borgorninja.androtask.viewmodel.MacroViewModel
 
@@ -26,26 +27,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         createNotificationChannel()
 
-        // Start the floating overlay service (requires overlay permission)
-        if (Settings.canDrawOverlays(this)) {
+        if (Settings.canDrawOverlays(this))
             startService(Intent(this, FloatingOverlayService::class.java))
-        }
 
         setContent {
             MaterialTheme {
                 Surface {
-                    val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = "home") {
-                        composable("home") {
-                            HomeScreen(navController, viewModel)
+                    val nav = rememberNavController()
+                    NavHost(nav, startDestination = "home") {
+                        composable("home")         { HomeScreen(nav, viewModel) }
+                        composable("editor/{id}")  { back ->
+                            val id = back.arguments?.getString("id")?.toLongOrNull() ?: 0L
+                            MacroEditorScreen(nav, id, viewModel)
                         }
-                        composable("editor/{macroId}") { back ->
-                            val macroId = back.arguments?.getString("macroId")?.toLongOrNull() ?: 0L
-                            MacroEditorScreen(navController, macroId, viewModel)
-                        }
-                        composable("settings") {
-                            SettingsScreen(navController)
-                        }
+                        composable("settings")     { SettingsScreen(nav) }
+                        composable("onboarding")   { OnboardingScreen(nav) }
                     }
                 }
             }
@@ -53,15 +49,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "AndroTask Overlay",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "Shown while the floating bubble is active" }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val ch = NotificationChannel(CHANNEL_ID, "AndroTask Overlay",
+            NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Shown while floating bubble is active"
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
-    companion object {
-        const val CHANNEL_ID = "androtask_overlay"
-    }
+    companion object { const val CHANNEL_ID = "androtask_overlay" }
 }
