@@ -7,5 +7,6 @@ class Converters {
     fun fromStepType(value: StepType): String = value.name
 
     @TypeConverter
-    fun toStepType(value: String): StepType = StepType.valueOf(value)
+    fun toStepType(value: String): StepType =
+        try { StepType.valueOf(value) } catch (_: IllegalArgumentException) { StepType.TAP }
 }
