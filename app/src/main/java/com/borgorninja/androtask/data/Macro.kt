@@ -11,7 +11,10 @@ data class Macro(
     val name: String,
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val loopCount: Int = 1,
+    val loopCount: Int = 1,             // -1 = infinite
     val loopDelay: Long = 0L,
-    val isEnabled: Boolean = true
+    val isEnabled: Boolean = true,
+    val speedMultiplier: Float = 1.0f,  // 0.25 – 4.0
+    val recordedWidth: Int = 0,         // 0 = no scaling applied
+    val recordedHeight: Int = 0
 )
