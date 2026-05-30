@@ -22,7 +22,6 @@ class FloatingOverlayService : Service() {
     private var coordPickerView: View? = null
     private var isRecording = false
 
-    // Touch tracking for overlay mode
     private var downX = 0f; private var downY = 0f; private var downTime = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -40,8 +39,7 @@ class FloatingOverlayService : Service() {
             CMD_STOP       -> stopRecording()
             CMD_TOGGLE     -> if (isRecording) stopRecording() else startRecording()
             CMD_PICK_START -> {
-                val forField = intent.getStringExtra(EXTRA_PICK_FIELD) ?: FIELD_XY
-                showCoordPicker(forField)
+                showCoordPicker(intent.getStringExtra(EXTRA_PICK_FIELD) ?: FIELD_XY)
             }
             CMD_PICK_CANCEL -> hideCoordPicker()
         }
@@ -58,7 +56,7 @@ class FloatingOverlayService : Service() {
         return NotificationCompat.Builder(this, MainActivity.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(if (isRecording) "Recording…" else "AndroTask")
-            .setContentText(if (isRecording) "Tap to stop" else "Floating bubble active")
+            .setContentText(if (isRecording) "Tap bubble to stop" else "Floating bubble active")
             .setContentIntent(pi).setOngoing(true).build()
     }
     private fun refreshNotif() =
@@ -68,21 +66,26 @@ class FloatingOverlayService : Service() {
     private fun showBubble() {
         if (bubbleView != null) return
         val view = BubbleView(this)
-        val lp = baseLp(BUBBLE_SIZE, BUBBLE_SIZE).apply { gravity = Gravity.TOP or Gravity.START; x = 16; y = 320 }
+        // Fix #7: density-independent bubble size
+        val sizePx = (56 * resources.displayMetrics.density).toInt()
+        val lp = baseLp(sizePx, sizePx).apply { gravity = Gravity.TOP or Gravity.START; x = 16; y = 320 }
         setupDrag(view, lp) { if (isRecording) stopRecording() else startRecording() }
         wm.addView(view, lp)
         bubbleView = view
     }
 
-    /** Remove the bubble and re-add it so it sits on top of overlayView. */
     private fun bringBubbleToFront() {
         bubbleView?.let { v ->
             val lp = v.layoutParams as WindowManager.LayoutParams
             runCatching { wm.removeView(v) }
             bubbleView = null
             val fresh = BubbleView(this)
-            setupDrag(fresh, lp) { if (isRecording) stopRecording() else startRecording() }
-            wm.addView(fresh, lp)
+            val sizePx = (56 * resources.displayMetrics.density).toInt()
+            val freshLp = baseLp(sizePx, sizePx).apply {
+                gravity = lp.gravity; x = lp.x; y = lp.y
+            }
+            setupDrag(fresh, freshLp) { if (isRecording) stopRecording() else startRecording() }
+            wm.addView(fresh, freshLp)
             bubbleView = fresh
         }
     }
@@ -97,12 +100,10 @@ class FloatingOverlayService : Service() {
         MacroAccessibilityService.recordedSteps.clear()
         bubbleView?.invalidate()
         refreshNotif()
-
         if (MacroAccessibilityService.recordingMode == RecordingMode.OVERLAY) {
             showOverlay()
-            bringBubbleToFront()          // bubble must be above the capture overlay
+            bringBubbleToFront()
         }
-        // PASSIVE mode: no overlay needed – accessibility events do the work
     }
 
     private fun stopRecording() {
@@ -119,7 +120,10 @@ class FloatingOverlayService : Service() {
         if (overlayView != null) return
         val v = object : View(this) {
             private val tint   = Paint().apply { color = Color.argb(20, 220, 0, 0) }
-            private val border = Paint().apply { color = Color.argb(160, 220, 0, 0); style = Paint.Style.STROKE; strokeWidth = 8f }
+            private val border = Paint().apply {
+                color = Color.argb(160, 220, 0, 0)
+                style = Paint.Style.STROKE; strokeWidth = 8f
+            }
             override fun onDraw(c: Canvas) {
                 c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), tint)
                 c.drawRect(4f, 4f, width - 4f, height - 4f, border)
@@ -141,14 +145,14 @@ class FloatingOverlayService : Service() {
                 val step = when {
                     dist > 40  -> MacroStep(macroId=0, stepIndex=MacroAccessibilityService.recordedSteps.size,
                                     type=StepType.SWIPE, x=downX, y=downY, x2=ev.x, y2=ev.y,
-                                    duration=dur.coerceIn(50,3000))
+                                    duration=dur.coerceIn(50, 3000))
                     dur >= 500 -> MacroStep(macroId=0, stepIndex=MacroAccessibilityService.recordedSteps.size,
-                                    type=StepType.LONG_PRESS, x=downX, y=downY, duration=dur.coerceIn(600,5000))
+                                    type=StepType.LONG_PRESS, x=downX, y=downY, duration=dur.coerceIn(600, 5000))
                     else       -> MacroStep(macroId=0, stepIndex=MacroAccessibilityService.recordedSteps.size,
                                     type=StepType.TAP, x=downX, y=downY, duration=100L)
                 }
                 MacroAccessibilityService.recordedSteps.add(step)
-                MacroAccessibilityService.instance?.replayStep(step) // pass-through to underlying app
+                MacroAccessibilityService.instance?.replayStep(step)
             }
         }
     }
@@ -156,45 +160,44 @@ class FloatingOverlayService : Service() {
     // ── Coord picker ──────────────────────────────────────────────────────────
     private fun showCoordPicker(field: String) {
         if (coordPickerView != null) return
-        val dm = resources.displayMetrics
+        val dm   = resources.displayMetrics
         var pickX = dm.widthPixels / 2f
         var pickY = dm.heightPixels / 2f
         var lastRawX = 0f; var lastRawY = 0f
 
         val view = object : View(this) {
-            val gridPaint = Paint().apply { color = Color.argb(40, 255,255,255); strokeWidth = 1f }
-            val linePaint = Paint().apply { color = Color.argb(220, 0,200,255); strokeWidth = 2f }
-            val circleFill= Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(60,0,200,255) }
-            val circleEdge= Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(255,0,200,255); style=Paint.Style.STROKE; strokeWidth=3f }
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; textSize=48f; textAlign=Paint.Align.CENTER
+            val gridPaint  = Paint().apply { color = Color.argb(40, 255,255,255); strokeWidth = 1f }
+            val linePaint  = Paint().apply { color = Color.argb(220, 0, 200, 255); strokeWidth = 2f }
+            val circleFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(60,0,200,255) }
+            val circleEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(255,0,200,255); style=Paint.Style.STROKE; strokeWidth=3f }
+            val textPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color=Color.WHITE; textSize=48f; textAlign=Paint.Align.CENTER
                 setShadowLayer(4f,2f,2f,Color.BLACK) }
-            val btnPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(220,30,30,30) }
-            val btnTxtPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; textSize=44f; textAlign=Paint.Align.CENTER
+            val btnPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(220,30,30,30) }
+            val btnTxtPaint= Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color=Color.WHITE; textSize=44f; textAlign=Paint.Align.CENTER
                 setShadowLayer(3f,1f,1f,Color.BLACK) }
-            val bgPaint   = Paint().apply { color = Color.argb(90,0,0,0) }
+            val bgPaint    = Paint().apply { color = Color.argb(90,0,0,0) }
 
             override fun onDraw(c: Canvas) {
                 val w = width.toFloat(); val h = height.toFloat()
                 c.drawRect(0f,0f,w,h,bgPaint)
-                // grid
                 var gx = 0f; while (gx < w) { c.drawLine(gx,0f,gx,h,gridPaint); gx+=100f }
                 var gy = 0f; while (gy < h) { c.drawLine(0f,gy,w,gy,gridPaint); gy+=100f }
-                // crosshair
                 c.drawLine(pickX, 0f, pickX, h, linePaint)
                 c.drawLine(0f, pickY, w, pickY, linePaint)
                 c.drawCircle(pickX, pickY, 40f, circleFill)
                 c.drawCircle(pickX, pickY, 40f, circleEdge)
-                // coords label
-                val label = "(${pickX.toInt()}, ${pickY.toInt()})"
+                val label  = "(${pickX.toInt()}, ${pickY.toInt()})"
                 val labelY = if (pickY > h * 0.8f) pickY - 60f else pickY + 80f
                 c.drawText(label, pickX, labelY, textPaint)
-                // buttons at bottom
                 val bw = 300f; val bh = 100f; val margin = 40f; val by = h - bh - margin
                 c.drawRoundRect(margin, by, margin+bw, by+bh, 20f,20f, btnPaint)
                 c.drawText("Cancel", margin+bw/2, by+bh*0.65f, btnTxtPaint)
                 val setX = w - margin - bw
-                val setBg = Paint(btnPaint).apply { color = Color.argb(220,0,140,200) }
-                c.drawRoundRect(setX, by, setX+bw, by+bh, 20f,20f, setBg)
+                c.drawRoundRect(setX, by, setX+bw, by+bh, 20f,20f,
+                    Paint(btnPaint).apply { color = Color.argb(220,0,140,200) })
                 c.drawText("Set", setX+bw/2, by+bh*0.65f, btnTxtPaint)
             }
 
@@ -206,30 +209,24 @@ class FloatingOverlayService : Service() {
                     MotionEvent.ACTION_MOVE -> {
                         pickX = (pickX + ev.rawX - lastRawX).coerceIn(0f, w)
                         pickY = (pickY + ev.rawY - lastRawY).coerceIn(0f, h)
-                        lastRawX = ev.rawX; lastRawY = ev.rawY
-                        invalidate()
+                        lastRawX = ev.rawX; lastRawY = ev.rawY; invalidate()
                     }
                     MotionEvent.ACTION_UP -> {
                         val tx = ev.x; val ty = ev.y
-                        // Cancel button
                         if (tx in margin..(margin+bw) && ty in by..(by+bh)) {
-                            coordPickResult.value = null
-                            hideCoordPicker()
+                            coordPickResult.value = null; hideCoordPicker()
                         }
-                        // Set button
                         val setX = w - margin - bw
                         if (tx in setX..(setX+bw) && ty in by..(by+bh)) {
-                            coordPickResult.value = Pair(field, Pair(pickX, pickY))
-                            hideCoordPicker()
+                            coordPickResult.value = Pair(field, Pair(pickX, pickY)); hideCoordPicker()
                         }
                     }
                 }
                 return true
             }
         }
-        val lp = baseLp(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            .apply { gravity = Gravity.TOP or Gravity.START }
-        wm.addView(view, lp)
+        wm.addView(view, baseLp(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            .apply { gravity = Gravity.TOP or Gravity.START })
         coordPickerView = view
         bringBubbleToFront()
     }
@@ -246,17 +243,18 @@ class FloatingOverlayService : Service() {
                 MotionEvent.ACTION_DOWN -> { sx = ev.rawX; sy = ev.rawY; dragging = false; true }
                 MotionEvent.ACTION_MOVE -> {
                     if (!dragging && hypot(ev.rawX-sx, ev.rawY-sy) > 12f) dragging = true
-                    if (dragging) { lp.x += (ev.rawX-sx).toInt(); lp.y += (ev.rawY-sy).toInt()
-                                    wm.updateViewLayout(view, lp); sx=ev.rawX; sy=ev.rawY }
+                    if (dragging) {
+                        lp.x += (ev.rawX-sx).toInt(); lp.y += (ev.rawY-sy).toInt()
+                        wm.updateViewLayout(view, lp); sx=ev.rawX; sy=ev.rawY
+                    }
                     true
                 }
-                MotionEvent.ACTION_UP  -> { if (!dragging) onClick(); true }
+                MotionEvent.ACTION_UP -> { if (!dragging) onClick(); true }
                 else -> false
             }
         }
     }
 
-    // ── Layout params helper ──────────────────────────────────────────────────
     private fun baseLp(w: Int, h: Int) = WindowManager.LayoutParams(
         w, h,
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -267,34 +265,34 @@ class FloatingOverlayService : Service() {
     // ── Bubble view ───────────────────────────────────────────────────────────
     private inner class BubbleView(ctx: Context) : View(ctx) {
         private val fill   = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; style=Paint.Style.STROKE; strokeWidth=5f }
-        private val txt    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=34f; typeface=Typeface.DEFAULT_BOLD }
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color=Color.WHITE; style=Paint.Style.STROKE; strokeWidth=4f }
+        private val txt    = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=32f; typeface=Typeface.DEFAULT_BOLD }
+
         override fun onDraw(c: Canvas) {
-            val cx=width/2f; val cy=height/2f; val r=minOf(cx,cy)-6f
-            fill.color = if (isRecording) Color.argb(220,210,45,45) else Color.argb(220,33,150,243)
+            val cx=width/2f; val cy=height/2f; val r=minOf(cx,cy)-5f
+            fill.color = if (isRecording) Color.argb(230,210,45,45) else Color.argb(230,33,150,83)
             c.drawCircle(cx,cy,r,fill); c.drawCircle(cx,cy,r,stroke)
             val count = MacroAccessibilityService.recordedSteps.size
             val label = if (isRecording && count > 0) "$count" else if (isRecording) "●" else "⏺"
-            c.drawText(label, cx, cy+12f, txt)
+            c.drawText(label, cx, cy+11f, txt)
         }
     }
 
     companion object {
-        private const val NOTIF_ID   = 1337
-        private const val BUBBLE_SIZE = 150
+        private const val NOTIF_ID = 1337
 
-        const val CMD            = "command"
-        const val CMD_START      = "start_record"
-        const val CMD_STOP       = "stop_record"
-        const val CMD_TOGGLE     = "toggle"
-        const val CMD_PICK_START = "pick_start"
-        const val CMD_PICK_CANCEL= "pick_cancel"
+        const val CMD             = "command"
+        const val CMD_START       = "start_record"
+        const val CMD_STOP        = "stop_record"
+        const val CMD_TOGGLE      = "toggle"
+        const val CMD_PICK_START  = "pick_start"
+        const val CMD_PICK_CANCEL = "pick_cancel"
         const val EXTRA_PICK_FIELD = "pick_field"
-        const val FIELD_XY       = "xy"
-        const val FIELD_XY2      = "xy2"
+        const val FIELD_XY        = "xy"
+        const val FIELD_XY2       = "xy2"
 
-        /** Result emitted when the user confirms a coord pick.
-         *  Pair<field, Pair<x,y>>  where field is FIELD_XY or FIELD_XY2 */
         val coordPickResult = MutableStateFlow<Pair<String, Pair<Float, Float>>?>(null)
     }
 }
