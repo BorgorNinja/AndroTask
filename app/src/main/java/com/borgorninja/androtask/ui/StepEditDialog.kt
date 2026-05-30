@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.borgorninja.androtask.FloatingOverlayService
@@ -19,8 +20,8 @@ import com.borgorninja.androtask.data.StepType
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StepEditDialog(
-    step:      MacroStep,
-    onSave:    (MacroStep) -> Unit,
+    step: MacroStep,
+    onSave: (MacroStep) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -36,55 +37,75 @@ fun StepEditDialog(
     var text        by remember { mutableStateOf(step.text) }
     var label       by remember { mutableStateOf(step.label) }
 
-    // Listen for coordinate picker results
-    val pickResult  by FloatingOverlayService.coordPickResult.collectAsState()
+    val pickResult by FloatingOverlayService.coordPickResult.collectAsState()
     LaunchedEffect(pickResult) {
         pickResult?.let { (field, coords) ->
             when (field) {
-                FloatingOverlayService.FIELD_XY  -> { x = coords.first.toInt().toString(); y = coords.second.toInt().toString() }
-                FloatingOverlayService.FIELD_XY2 -> { x2= coords.first.toInt().toString(); y2= coords.second.toInt().toString() }
+                FloatingOverlayService.FIELD_XY  -> {
+                    x = coords.first.toInt().toString()
+                    y = coords.second.toInt().toString()
+                }
+                FloatingOverlayService.FIELD_XY2 -> {
+                    x2 = coords.first.toInt().toString()
+                    y2 = coords.second.toInt().toString()
+                }
             }
             FloatingOverlayService.coordPickResult.value = null
         }
     }
 
-    val needsCoords  = type in setOf(StepType.TAP, StepType.LONG_PRESS, StepType.SWIPE, StepType.PINCH,
-                                     StepType.SCROLL_UP, StepType.SCROLL_DOWN)
-    val needsCoords2 = type in setOf(StepType.SWIPE, StepType.PINCH)
-    val needsDuration= type in setOf(StepType.TAP, StepType.LONG_PRESS, StepType.SWIPE, StepType.PINCH, StepType.WAIT,
-                                     StepType.SCROLL_UP, StepType.SCROLL_DOWN)
-    val needsText    = type == StepType.TYPE_TEXT
+    val needsCoords   = type in setOf(StepType.TAP, StepType.LONG_PRESS, StepType.SWIPE,
+                                      StepType.PINCH, StepType.SCROLL_UP, StepType.SCROLL_DOWN)
+    val needsCoords2  = type in setOf(StepType.SWIPE, StepType.PINCH)
+    val needsDuration = type in setOf(StepType.TAP, StepType.LONG_PRESS, StepType.SWIPE,
+                                      StepType.PINCH, StepType.WAIT,
+                                      StepType.SCROLL_UP, StepType.SCROLL_DOWN)
+    val needsText     = type == StepType.TYPE_TEXT
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor   = CardDark,
         title = { Text("Edit Step") },
         text  = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 // ── Step type selector ──────────────────────────────────────
-                Text("Step Type", style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement   = Arrangement.spacedBy(6.dp)) {
+                Text("Step Type", style = MaterialTheme.typography.labelMedium, color = OnBgVariant)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement   = Arrangement.spacedBy(6.dp)
+                ) {
                     StepType.entries.forEach { t ->
                         FilterChip(
-                            selected  = type == t,
-                            onClick   = { type = t },
-                            label     = { Text(t.name.replace('_',' ').lowercase()
-                                .replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) }
+                            selected = type == t,
+                            onClick  = { type = t },
+                            label = {
+                                Text(t.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()},
+                                    style = MaterialTheme.typography.labelSmall)
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = stepTypeColor(t).copy(alpha=0.25f),
+                                selectedLabelColor     = stepTypeColor(t)
+                            )
                         )
                     }
                 }
 
                 // ── Coordinates ─────────────────────────────────────────────
                 if (needsCoords) {
-                    Divider()
+                    HorizontalDivider(color = Color(0xFF333333))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Start (X, Y)", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                        Text("Start (X, Y)", style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f))
                         IconButton(onClick = {
                             context.startService(Intent(context, FloatingOverlayService::class.java)
                                 .putExtra(FloatingOverlayService.CMD, FloatingOverlayService.CMD_PICK_START)
-                                .putExtra(FloatingOverlayService.EXTRA_PICK_FIELD, FloatingOverlayService.FIELD_XY))
-                        }) { Icon(Icons.Default.MyLocation, "Pick on screen", modifier = Modifier.size(20.dp)) }
+                                .putExtra(FloatingOverlayService.EXTRA_PICK_FIELD,
+                                    FloatingOverlayService.FIELD_XY))
+                        }) { Icon(Icons.Default.MyLocation, "Pick on screen",
+                            modifier=Modifier.size(20.dp), tint=Green400) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value=x, onValueChange={x=it}, label={Text("X")},
@@ -96,12 +117,15 @@ fun StepEditDialog(
 
                 if (needsCoords2) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("End (X2, Y2)", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                        Text("End (X2, Y2)", style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f))
                         IconButton(onClick = {
                             context.startService(Intent(context, FloatingOverlayService::class.java)
                                 .putExtra(FloatingOverlayService.CMD, FloatingOverlayService.CMD_PICK_START)
-                                .putExtra(FloatingOverlayService.EXTRA_PICK_FIELD, FloatingOverlayService.FIELD_XY2))
-                        }) { Icon(Icons.Default.MyLocation, "Pick end point", modifier = Modifier.size(20.dp)) }
+                                .putExtra(FloatingOverlayService.EXTRA_PICK_FIELD,
+                                    FloatingOverlayService.FIELD_XY2))
+                        }) { Icon(Icons.Default.MyLocation, "Pick end point",
+                            modifier=Modifier.size(20.dp), tint=Green400) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value=x2, onValueChange={x2=it}, label={Text("X2")},
@@ -111,48 +135,51 @@ fun StepEditDialog(
                     }
                 }
 
-                // ── Text (for TYPE_TEXT) ─────────────────────────────────────
+                // ── Text ─────────────────────────────────────────────────────
                 if (needsText) {
-                    Divider()
+                    HorizontalDivider(color = Color(0xFF333333))
                     OutlinedTextField(value=text, onValueChange={text=it},
                         label={Text("Text to type")}, modifier=Modifier.fillMaxWidth())
                 }
 
                 // ── Timing ───────────────────────────────────────────────────
                 if (needsDuration) {
-                    Divider()
-                    Text("Timing", style = MaterialTheme.typography.labelMedium)
+                    HorizontalDivider(color = Color(0xFF333333))
+                    Text("Timing", style = MaterialTheme.typography.labelMedium, color = OnBgVariant)
                     OutlinedTextField(value=duration, onValueChange={duration=it},
                         label={Text("Duration (ms)")}, modifier=Modifier.fillMaxWidth(), singleLine=true)
                 }
                 OutlinedTextField(value=delayBefore, onValueChange={delayBefore=it},
                     label={Text("Delay before (ms)")}, modifier=Modifier.fillMaxWidth(), singleLine=true)
                 OutlinedTextField(value=jitter, onValueChange={jitter=it},
-                    label={Text("Jitter ±ms  (human-like randomness)")},
+                    label={Text("Jitter ±ms (human-like randomness)")},
                     modifier=Modifier.fillMaxWidth(), singleLine=true)
 
                 // ── Label ────────────────────────────────────────────────────
-                Divider()
+                HorizontalDivider(color = Color(0xFF333333))
                 OutlinedTextField(value=label, onValueChange={label=it},
                     label={Text("Step label / comment (optional)")},
                     modifier=Modifier.fillMaxWidth(), singleLine=true)
             }
         },
         confirmButton = {
-            Button(onClick = {
-                onSave(step.copy(
-                    type        = type,
-                    x           = x.toFloatOrNull() ?: step.x,
-                    y           = y.toFloatOrNull() ?: step.y,
-                    x2          = x2.toFloatOrNull() ?: step.x2,
-                    y2          = y2.toFloatOrNull() ?: step.y2,
-                    duration    = duration.toLongOrNull()?.coerceAtLeast(0L) ?: step.duration,
-                    delayBefore = delayBefore.toLongOrNull()?.coerceAtLeast(0L) ?: step.delayBefore,
-                    jitter      = jitter.toLongOrNull()?.coerceAtLeast(0L) ?: step.jitter,
-                    text        = text,
-                    label       = label
-                ))
-            }) { Text("Save") }
+            Button(
+                onClick = {
+                    onSave(step.copy(
+                        type        = type,
+                        x           = x.toFloatOrNull() ?: step.x,
+                        y           = y.toFloatOrNull() ?: step.y,
+                        x2          = x2.toFloatOrNull() ?: step.x2,
+                        y2          = y2.toFloatOrNull() ?: step.y2,
+                        duration    = duration.toLongOrNull()?.coerceAtLeast(0L) ?: step.duration,
+                        delayBefore = delayBefore.toLongOrNull()?.coerceAtLeast(0L) ?: step.delayBefore,
+                        jitter      = jitter.toLongOrNull()?.coerceAtLeast(0L) ?: step.jitter,
+                        text        = text,
+                        label       = label
+                    ))
+                },
+                colors = ButtonDefaults.buttonColors(containerColor=Green700)
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
