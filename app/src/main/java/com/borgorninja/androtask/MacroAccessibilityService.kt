@@ -39,8 +39,6 @@ class MacroAccessibilityService : AccessibilityService() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
-
-    // For passive scroll tracking
     private val scrollPositions = HashMap<String, Pair<Int, Int>>()
 
     override fun onServiceConnected() { instance = this }
@@ -56,51 +54,44 @@ class MacroAccessibilityService : AccessibilityService() {
     // ── Passive recording via accessibility events ────────────────────────────
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isRecording || recordingMode != RecordingMode.PASSIVE) return
-        val event = event ?: return
-        val source = event.source ?: return
+        val ev  = event ?: return
+        val src = ev.source ?: return
         val bounds = Rect()
-        source.getBoundsInScreen(bounds)
-        if (bounds.isEmpty) { source.recycle(); return }
+        src.getBoundsInScreen(bounds)
+        if (bounds.isEmpty) { src.recycle(); return }
 
         val cx = bounds.exactCenterX()
         val cy = bounds.exactCenterY()
 
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                addPassiveStep(MacroStep(
-                    macroId = 0, stepIndex = recordedSteps.size,
-                    type = StepType.TAP, x = cx, y = cy, duration = 120L
-                ))
-            }
-            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> {
-                addPassiveStep(MacroStep(
-                    macroId = 0, stepIndex = recordedSteps.size,
-                    type = StepType.LONG_PRESS, x = cx, y = cy, duration = 650L
-                ))
-            }
+        when (ev.eventType) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED ->
+                addPassiveStep(MacroStep(macroId=0, stepIndex=recordedSteps.size,
+                    type=StepType.TAP, x=cx, y=cy, duration=120L))
+
+            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED ->
+                addPassiveStep(MacroStep(macroId=0, stepIndex=recordedSteps.size,
+                    type=StepType.LONG_PRESS, x=cx, y=cy, duration=650L))
+
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                val key = "${event.windowId}:${event.className}"
+                val key  = "${ev.windowId}:${ev.className}"
                 val prev = scrollPositions[key]
-                val curX = event.scrollX; val curY = event.scrollY
+                val curX = ev.scrollX; val curY = ev.scrollY
                 val (prevX, prevY) = prev ?: Pair(curX, curY)
                 scrollPositions[key] = Pair(curX, curY)
 
-                val dy = if (Build.VERSION.SDK_INT >= 28) event.scrollDeltaY else curY - prevY
-                val dx = if (Build.VERSION.SDK_INT >= 28) event.scrollDeltaX else curX - prevX
-                if (abs(dy) < 1 && abs(dx) < 1) { source.recycle(); return }
+                val dy = if (Build.VERSION.SDK_INT >= 28) ev.scrollDeltaY else curY - prevY
+                val dx = if (Build.VERSION.SDK_INT >= 28) ev.scrollDeltaX else curX - prevX
+                if (abs(dy) < 1 && abs(dx) < 1) { src.recycle(); return }
 
-                addPassiveStep(MacroStep(
-                    macroId = 0, stepIndex = recordedSteps.size,
-                    type = if (dy >= 0) StepType.SCROLL_DOWN else StepType.SCROLL_UP,
-                    x = cx, y = cy, duration = 300L
-                ))
+                addPassiveStep(MacroStep(macroId=0, stepIndex=recordedSteps.size,
+                    type=if (dy >= 0) StepType.SCROLL_DOWN else StepType.SCROLL_UP,
+                    x=cx, y=cy, duration=300L))
             }
         }
-        source.recycle()
+        src.recycle()
     }
 
     private fun addPassiveStep(step: MacroStep) {
-        // De-duplicate rapid events
         val last = recordedSteps.lastOrNull()
         if (last != null && last.type == step.type &&
             abs(last.x - step.x) < 5f && abs(last.y - step.y) < 5f) return
@@ -112,23 +103,29 @@ class MacroAccessibilityService : AccessibilityService() {
         steps: List<MacroStep>,
         loopCount: Int,
         loopDelay: Long,
-        speedMultiplier: Float  = 1.0f,
-        recordedWidth: Int      = 0,
-        recordedHeight: Int     = 0,
-        startFromIndex: Int     = 0
+        speedMultiplier: Float = 1.0f,
+        recordedWidth: Int     = 0,
+        recordedHeight: Int    = 0,
+        startFromIndex: Int    = 0
     ) {
         scope.launch {
             acquireWakeLock()
             isPlaying = true
             try {
-                val dm = DisplayMetrics().also {
-                    (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                        .defaultDisplay.getRealMetrics(it)
+                // Fix #1: deprecated defaultDisplay
+                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val (screenW, screenH) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val b = wm.currentWindowMetrics.bounds
+                    Pair(b.width().toFloat(), b.height().toFloat())
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dm = DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+                    Pair(dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
                 }
-                val scaleX = if (recordedWidth  > 0) dm.widthPixels.toFloat()  / recordedWidth  else 1f
-                val scaleY = if (recordedHeight > 0) dm.heightPixels.toFloat() / recordedHeight else 1f
-                val sp     = speedMultiplier.coerceIn(0.1f, 10f)
 
+                val scaleX = if (recordedWidth  > 0) screenW / recordedWidth  else 1f
+                val scaleY = if (recordedHeight > 0) screenH / recordedHeight else 1f
+                val sp     = speedMultiplier.coerceIn(0.1f, 10f)
                 val ordered = steps.sortedBy { it.stepIndex }.drop(startFromIndex)
                 val loops   = if (loopCount < 0) Int.MAX_VALUE else loopCount
 
@@ -151,7 +148,6 @@ class MacroAccessibilityService : AccessibilityService() {
 
     fun stopPlayback() { isPlaying = false }
 
-    /** Immediately replay a single step (used during overlay recording to pass-through). */
     fun replayStep(step: MacroStep) { scope.launch { dispatchStep(step, 1f, 1f, 1f) } }
 
     // ── Gesture dispatch ──────────────────────────────────────────────────────
@@ -163,48 +159,42 @@ class MacroAccessibilityService : AccessibilityService() {
             StepType.WAIT -> delay(dur)
 
             StepType.TAP, StepType.LONG_PRESS -> {
-                val path = Path().apply { moveTo(step.x * sx, step.y * sy) }
+                val path    = Path().apply { moveTo(step.x * sx, step.y * sy) }
                 val realDur = if (step.type == StepType.LONG_PRESS) maxOf(dur, 600L) else dur
                 dispatchGestureAwait(GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(path, 0, realDur))
-                    .build())
+                    .addStroke(GestureDescription.StrokeDescription(path, 0, realDur)).build())
             }
 
             StepType.SWIPE -> {
                 val path = Path().apply {
-                    moveTo(step.x * sx, step.y * sy)
-                    lineTo(step.x2 * sx, step.y2 * sy)
+                    moveTo(step.x * sx, step.y * sy); lineTo(step.x2 * sx, step.y2 * sy)
                 }
                 dispatchGestureAwait(GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
-                    .build())
+                    .addStroke(GestureDescription.StrokeDescription(path, 0, dur)).build())
             }
 
             StepType.PINCH -> {
-                val p1 = Path().apply { moveTo(step.x * sx, step.y * sy); lineTo(step.x2 * sx, step.y2 * sy) }
-                val p2 = Path().apply { moveTo(step.x2 * sx, step.y2 * sy); lineTo(step.x * sx, step.y * sy) }
+                val p1 = Path().apply { moveTo(step.x*sx, step.y*sy); lineTo(step.x2*sx, step.y2*sy) }
+                val p2 = Path().apply { moveTo(step.x2*sx, step.y2*sy); lineTo(step.x*sx, step.y*sy) }
                 dispatchGestureAwait(GestureDescription.Builder()
                     .addStroke(GestureDescription.StrokeDescription(p1, 0, dur))
-                    .addStroke(GestureDescription.StrokeDescription(p2, 0, dur))
-                    .build())
+                    .addStroke(GestureDescription.StrokeDescription(p2, 0, dur)).build())
             }
 
             StepType.SCROLL_UP, StepType.SCROLL_DOWN -> {
-                // Try AccessibilityNodeInfo action first, fall back to swipe
-                val node = findScrollableAt(step.x * sx, step.y * sy)
+                val node   = findScrollableAt(step.x * sx, step.y * sy)
                 val action = if (step.type == StepType.SCROLL_DOWN)
                     AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
                 else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
                 if (node != null && node.performAction(action)) {
-                    node.recycle()
-                    delay(200)
+                    node.recycle(); delay(200)
                 } else {
                     node?.recycle()
-                    val swipeY1 = if (step.type == StepType.SCROLL_DOWN) step.y * sy + 400f else step.y * sy - 400f
-                    val swipeY2 = if (step.type == StepType.SCROLL_DOWN) step.y * sy - 400f else step.y * sy + 400f
-                    val path = Path().apply { moveTo(step.x * sx, swipeY1); lineTo(step.x * sx, swipeY2) }
+                    val y1 = if (step.type == StepType.SCROLL_DOWN) step.y*sy+400f else step.y*sy-400f
+                    val y2 = if (step.type == StepType.SCROLL_DOWN) step.y*sy-400f else step.y*sy+400f
                     dispatchGestureAwait(GestureDescription.Builder()
-                        .addStroke(GestureDescription.StrokeDescription(path, 0, 300L))
+                        .addStroke(GestureDescription.StrokeDescription(
+                            Path().apply { moveTo(step.x*sx, y1); lineTo(step.x*sx, y2) }, 0, 300L))
                         .build())
                 }
             }
@@ -216,9 +206,10 @@ class MacroAccessibilityService : AccessibilityService() {
 
             StepType.VOLUME_UP, StepType.VOLUME_DOWN -> {
                 val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val direction = if (step.type == StepType.VOLUME_UP)
-                    AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                am.adjustVolume(direction, AudioManager.FLAG_SHOW_UI)
+                am.adjustVolume(
+                    if (step.type == StepType.VOLUME_UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                    AudioManager.FLAG_SHOW_UI
+                )
                 delay(100)
             }
 
@@ -240,11 +231,9 @@ class MacroAccessibilityService : AccessibilityService() {
         fun search(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
             node ?: return null
             val b = Rect(); node.getBoundsInScreen(b)
-            if (b.contains(x.toInt(), y.toInt()) &&
-                node.isScrollable) return node
+            if (b.contains(x.toInt(), y.toInt()) && node.isScrollable) return node
             for (i in 0 until node.childCount) {
-                val r = search(node.getChild(i))
-                if (r != null) return r
+                val r = search(node.getChild(i)); if (r != null) return r
             }
             return null
         }
@@ -259,13 +248,12 @@ class MacroAccessibilityService : AccessibilityService() {
             }, null)
         }
 
-    // ── WakeLock ──────────────────────────────────────────────────────────────
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
             "AndroTask::Playback"
-        ).apply { acquire(30 * 60 * 1000L) } // max 30 min
+        ).apply { acquire(30 * 60 * 1000L) }
     }
 
     private fun releaseWakeLock() {
