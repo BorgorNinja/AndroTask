@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,10 +33,9 @@ import kotlinx.coroutines.delay
 fun OnboardingScreen(navController: NavController) {
     val context = LocalContext.current
 
-    // Re-check permissions every second so status updates automatically
-    var accessOk   by remember { mutableStateOf(false) }
-    var overlayOk  by remember { mutableStateOf(false) }
-    var notifOk    by remember { mutableStateOf(false) }
+    var accessOk  by remember { mutableStateOf(false) }
+    var overlayOk by remember { mutableStateOf(false) }
+    var notifOk   by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -50,12 +50,17 @@ fun OnboardingScreen(navController: NavController) {
     }
 
     Scaffold(
+        containerColor = BgDark,
         topBar = {
             TopAppBar(
-                title = { Text("Setup") },
+                title = { Text("Setup", fontWeight = FontWeight.SemiBold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = SurfaceDark,
+                    titleContentColor = OnBg
+                ),
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.Close, "Close")
+                        Icon(Icons.Default.Close, "Close", tint = OnBg)
                     }
                 }
             )
@@ -65,27 +70,27 @@ fun OnboardingScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad)
-                .padding(24.dp)
+                .padding(20.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("AndroTask needs these permissions to record and replay macros.",
-                style = MaterialTheme.typography.bodyLarge)
+                style = MaterialTheme.typography.bodyLarge, color = OnBg)
 
             PermissionRow(
-                icon       = Icons.Default.Accessibility,
-                title      = "Accessibility Service",
-                desc       = "Required to dispatch gestures and detect taps during passive recording.",
-                granted    = accessOk,
-                onEnable   = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                icon     = Icons.Default.Accessibility,
+                title    = "Accessibility Service",
+                desc     = "Required to dispatch gestures and detect taps during passive recording.",
+                granted  = accessOk,
+                onEnable = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             )
 
             PermissionRow(
-                icon       = Icons.Default.Layers,
-                title      = "Draw Over Other Apps",
-                desc       = "Required to show the floating bubble and recording overlay.",
-                granted    = overlayOk,
-                onEnable   = {
+                icon     = Icons.Default.Layers,
+                title    = "Draw Over Other Apps",
+                desc     = "Required to show the floating bubble and recording overlay.",
+                granted  = overlayOk,
+                onEnable = {
                     context.startActivity(Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:${context.packageName}")
@@ -95,11 +100,11 @@ fun OnboardingScreen(navController: NavController) {
 
             if (Build.VERSION.SDK_INT >= 33) {
                 PermissionRow(
-                    icon       = Icons.Default.Notifications,
-                    title      = "Post Notifications",
-                    desc       = "Shows a persistent notification while the overlay service is running.",
-                    granted    = notifOk,
-                    onEnable   = {
+                    icon     = Icons.Default.Notifications,
+                    title    = "Post Notifications",
+                    desc     = "Shows a persistent notification while the overlay service is running.",
+                    granted  = notifOk,
+                    onEnable = {
                         context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                         })
@@ -109,41 +114,43 @@ fun OnboardingScreen(navController: NavController) {
 
             if (accessOk && overlayOk && notifOk) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    shape  = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20))
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp))
+                            tint = Green400, modifier = Modifier.size(32.dp))
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text("All set!", style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold)
+                                fontWeight = FontWeight.Bold, color = Color.White)
                             Text("You can now record and replay macros.",
-                                style = MaterialTheme.typography.bodySmall)
+                                style = MaterialTheme.typography.bodySmall, color = Color.White)
                         }
                     }
                 }
-                Button(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Get Started")
-                }
+                Button(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Green700)
+                ) { Text("Get Started", fontWeight = FontWeight.SemiBold) }
             }
 
-            Divider()
+            HorizontalDivider(color = Color(0xFF2A2A2A))
             Text("Quick start guide", style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold)
+                fontWeight = FontWeight.Bold, color = OnBg)
             Text("""
 1. Enable all permissions above.
 2. Tap + on the home screen to create a macro.
 3. Choose recording mode:
    • Passive – use the app normally; taps are detected automatically.
    • Overlay – a transparent screen captures every touch precisely.
-4. Tap "Record Gestures", perform your actions, then tap "Stop Recording".
+4. Tap "Record Gestures", perform your actions, then tap "Stop".
 5. Save the macro. Tap ▶ to run it any time.
-6. Use the floating bubble (visible from any app) to start/stop recording on-the-fly.
+6. Use the floating bubble (visible from any app) to toggle recording.
 7. Schedule macros via the ⋮ menu → Schedule.
-            """.trimIndent(), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            """.trimIndent(),
+                style = MaterialTheme.typography.bodySmall, color = OnBgVariant)
         }
     }
 }
@@ -153,23 +160,26 @@ private fun PermissionRow(
     icon: ImageVector, title: String, desc: String,
     granted: Boolean, onEnable: () -> Unit
 ) {
-    Card {
+    Card(
+        shape  = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark)
+    ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null,
-                tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                tint = if (granted) Green400 else MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(36.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(desc, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, color = OnBg)
+                Text(desc, style = MaterialTheme.typography.bodySmall, color = OnBgVariant)
             }
             Spacer(Modifier.width(8.dp))
             if (granted) {
                 Icon(Icons.Default.CheckCircle, "Granted",
-                    tint = Color(0xFF4CAF50), modifier = Modifier.size(28.dp))
+                    tint = Green400, modifier = Modifier.size(28.dp))
             } else {
-                TextButton(onClick = onEnable) { Text("Enable") }
+                TextButton(onClick = onEnable) { Text("Enable", color = Green400) }
             }
         }
     }
@@ -180,7 +190,7 @@ fun isAccessibilityEnabled(context: Context): Boolean {
     val enabled = Settings.Secure.getString(
         context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
     val splitter = TextUtils.SimpleStringSplitter(':').also { it.setString(enabled) }
-    val target = ComponentName(context, MacroAccessibilityService::class.java)
+    val target   = ComponentName(context, MacroAccessibilityService::class.java)
     while (splitter.hasNext()) {
         val cn = ComponentName.unflattenFromString(splitter.next()) ?: continue
         if (cn == target) return true
