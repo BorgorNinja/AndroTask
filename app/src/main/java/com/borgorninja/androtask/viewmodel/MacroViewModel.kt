@@ -1,6 +1,7 @@
 package com.borgorninja.androtask.viewmodel
 
 import android.app.Application
+import android.os.Build
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.lifecycle.AndroidViewModel
@@ -44,8 +45,16 @@ class MacroViewModel(app: Application) : AndroidViewModel(app) {
         onDone: (Long) -> Unit = {}
     ) {
         viewModelScope.launch {
+            // Fix #1: deprecated defaultDisplay.getRealMetrics
             val wm = getApplication<Application>().getSystemService(WindowManager::class.java)
-            val dm = DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+            val (w, h) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val b = wm.currentWindowMetrics.bounds
+                Pair(b.width(), b.height())
+            } else {
+                @Suppress("DEPRECATION")
+                val dm = DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+                Pair(dm.widthPixels, dm.heightPixels)
+            }
 
             val macro = Macro(
                 id              = macroId,
@@ -54,8 +63,8 @@ class MacroViewModel(app: Application) : AndroidViewModel(app) {
                 loopCount       = loopCount,
                 loopDelay       = loopDelay,
                 speedMultiplier = speedMultiplier,
-                recordedWidth   = dm.widthPixels,
-                recordedHeight  = dm.heightPixels
+                recordedWidth   = w,
+                recordedHeight  = h
             )
             val id = if (macroId == 0L) repo.saveMacro(macro, steps)
                      else { repo.updateMacro(macro, steps); macroId }
@@ -63,7 +72,12 @@ class MacroViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteMacro(id: Long)  { viewModelScope.launch { repo.deleteMacro(id) } }
+    fun deleteMacro(id: Long) { viewModelScope.launch { repo.deleteMacro(id) } }
+
+    // Fix #4: toggle enabled
+    fun setMacroEnabled(id: Long, enabled: Boolean) {
+        viewModelScope.launch { repo.setMacroEnabled(id, enabled) }
+    }
 
     // ── Playback ──────────────────────────────────────────────────────────────
     fun playMacro(macroId: Long, startFromStep: Int = 0) {
@@ -87,7 +101,8 @@ class MacroViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { onDone(repo.addTrigger(t)) }
     }
     fun removeTrigger(id: Long) { viewModelScope.launch { repo.removeTrigger(id) } }
-    fun getTriggersForMacro(id: Long): Flow<List<ScheduledTrigger>> = repo.getTriggersForMacro(id)
+    fun getTriggersForMacro(id: Long): Flow<List<ScheduledTrigger>> =
+        repo.getTriggersForMacro(id)
 
     // ── Export / Import ───────────────────────────────────────────────────────
     fun exportMacroJson(id: Long, cb: (String) -> Unit) {
