@@ -22,6 +22,10 @@ interface MacroDao {
     @Query("DELETE FROM macros WHERE id = :id")
     suspend fun deleteMacroById(id: Long)
 
+    // Fix #4: toggle isEnabled without a full update
+    @Query("UPDATE macros SET isEnabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
     // ── Steps ─────────────────────────────────────────────────────────────────
     @Query("SELECT * FROM macro_steps WHERE macroId = :macroId ORDER BY stepIndex ASC")
     fun getStepsForMacro(macroId: Long): Flow<List<MacroStep>>
