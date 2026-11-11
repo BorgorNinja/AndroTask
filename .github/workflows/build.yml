@@ -76,26 +76,19 @@ jobs:
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose "$SIGNED"
           echo "✅ APK signed successfully"
 
-      - name: Upload Debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AndroTask-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/
-          if-no-files-found: warn
+      - name: Find generated APK files
+        if: always()
+        run: |
+          echo "Searching for APK files..."
+          find app/build/outputs -type f -name "*.apk" -print || true
 
-      - name: Upload Release APK (unsigned)
-        if: success()
+      - name: Upload APK Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AndroTask-release-unsigned-${{ github.sha }}
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          name: AndroTask-APKs-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-
-      - name: Upload Release APK (signed)
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AndroTask-release-signed-${{ github.sha }}
-          path: app/build/outputs/apk/release/app-release-signed.apk
-          if-no-files-found: warn
+          retention-days: 14
